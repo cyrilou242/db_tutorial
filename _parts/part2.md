@@ -13,231 +13,314 @@ Breaking things into two steps like this has a couple advantages:
 - Reduces the complexity of each part (e.g. virtual machine does not worry about syntax errors)
 - Allows compiling common queries once and caching the bytecode for improved performance
 
-With this in mind, let's refactor our `main` function and support two new keywords in the process:
+With this in mind, let's refactor our `run` function and support two new keywords in the process:
 
 ```diff
- int main(int argc, char* argv[]) {
-   InputBuffer* input_buffer = new_input_buffer();
-   while (true) {
-     print_prompt();
-     read_input(input_buffer);
+    public void run() {
+        while (true) {
+            printPrompt();
+            String input = readInput();
+            Objects.requireNonNull(input);
 
--    if (strcmp(input_buffer->buffer, ".exit") == 0) {
--      exit(EXIT_SUCCESS);
--    } else {
--      printf("Unrecognized command '%s'.\n", input_buffer->buffer);
-+    if (input_buffer->buffer[0] == '.') {
-+      switch (do_meta_command(input_buffer)) {
-+        case (META_COMMAND_SUCCESS):
-+          continue;
-+        case (META_COMMAND_UNRECOGNIZED_COMMAND):
-+          printf("Unrecognized command '%s'\n", input_buffer->buffer);
-+          continue;
-+      }
-     }
-+
-+    Statement statement;
-+    switch (prepare_statement(input_buffer, &statement)) {
-+      case (PREPARE_SUCCESS):
-+        break;
-+      case (PREPARE_UNRECOGNIZED_STATEMENT):
-+        printf("Unrecognized keyword at start of '%s'.\n",
-+               input_buffer->buffer);
-+        continue;
-+    }
-+
-+    execute_statement(&statement);
-+    printf("Executed.\n");
-   }
- }
+            if (input.isEmpty()) {
+                continue; // do nothing and loop
+            }
+-            if (input.equals(".exit")) {
+-                System.out.println("Exiting - Good bye.");
+-                System.exit(0);
+-            } else {
+-                System.out.printf("Unrecognized command: '%s'%n", input);
++            if (input.charAt(0) == '.') {
++                MetaCommandResult metaCommandResult = doMetaCommand(input);
++                switch (metaCommandResult) {
++                    case META_COMMAND_SUCCESS:
++                        continue;
++                    case META_COMMAND_UNRECOGNIZED_COMMAND:
++                        System.out.printf("Unrecognized command: '%s'%n", input);
++                        continue;
++                }
+            }
++            PreparedStatement preparedStatement = prepareStatement(input);
++            switch (preparedStatement.statementCheckResult) {
++                case PREPARE_SUCCESS:
++                    break;
++                case PREPARE_UNRECOGNIZED_STATEMENT:
++                    System.out.printf("Unrecognized  keyword at start of: '%s'%n", input);
++                    continue;
++            }
++            executeStatement(preparedStatement.getStatement());
++            System.out.printf("Executed.%n");
+        }
+    }
 ```
 
 Non-SQL statements like `.exit` are called "meta-commands". They all start with a dot, so we check for them and handle them in a separate function.
 
 Next, we add a step that converts the line of input into our internal representation of a statement. This is our hacky version of the sqlite front-end.
 
-Lastly, we pass the prepared statement to `execute_statement`. This function will eventually become our virtual machine.
+Lastly, we pass the prepared statement to `executeStatement`. This function will eventually become our virtual machine.
 
 Notice that two of our new functions return enums indicating success or failure:
 
-```c
-typedef enum {
-  META_COMMAND_SUCCESS,
-  META_COMMAND_UNRECOGNIZED_COMMAND
-} MetaCommandResult;
+```java
+private enum MetaCommandResult {
+    META_COMMAND_SUCCESS,
+    META_COMMAND_UNRECOGNIZED_COMMAND
+}
 
-typedef enum { PREPARE_SUCCESS, PREPARE_UNRECOGNIZED_STATEMENT } PrepareResult;
-```
-
-"Unrecognized statement"? That seems a bit like an exception. But [exceptions are bad](https://www.youtube.com/watch?v=EVhCUSgNbzo) (and C doesn't even support them), so I'm using enum result codes wherever practical. The C compiler will complain if my switch statement doesn't handle a member of the enum, so we can feel a little more confident we handle every result of a function. Expect more result codes to be added in the future.
-
-`do_meta_command` is just a wrapper for existing functionality that leaves room for more commands:
-
-```c
-MetaCommandResult do_meta_command(InputBuffer* input_buffer) {
-  if (strcmp(input_buffer->buffer, ".exit") == 0) {
-    exit(EXIT_SUCCESS);
-  } else {
-    return META_COMMAND_UNRECOGNIZED_COMMAND;
-  }
+private enum PrepareResult {
+    PREPARE_SUCCESS,
+    PREPARE_UNRECOGNIZED_STATEMENT
 }
 ```
 
-Our "prepared statement" right now just contains an enum with two possible values. It will contain more data as we allow parameters in statements:
+"Unrecognized statement"? That seems a bit like an exception. But [exceptions should be exceptional](https://flylib.com/books/en/2.823.1.73/1/), so I'm using enum result codes wherever practical. My Java IDE will complain if my switch statement doesn't handle a member of the enum, so we can feel a little more confident we handle every result of a function. Expect more result codes to be added in the future.
 
-```c
-typedef enum { STATEMENT_INSERT, STATEMENT_SELECT } StatementType;
+`doMetaCommand` is just a wrapper for existing functionality that leaves room for more commands:
 
-typedef struct {
-  StatementType type;
-} Statement;
+```java
+private MetaCommandResult doMetaCommand(String input) {
+    if (input.equals(".exit")) {
+    System.out.println("Exiting - Good bye.");
+    System.exit(0);}
+    return MetaCommandResult.META_COMMAND_UNRECOGNIZED_COMMAND;
+    }
 ```
 
-`prepare_statement` (our "SQL Compiler") does not understand SQL right now. In fact, it only understands two words:
-```c
-PrepareResult prepare_statement(InputBuffer* input_buffer,
-                                Statement* statement) {
-  if (strncmp(input_buffer->buffer, "insert", 6) == 0) {
-    statement->type = STATEMENT_INSERT;
-    return PREPARE_SUCCESS;
-  }
-  if (strcmp(input_buffer->buffer, "select") == 0) {
-    statement->type = STATEMENT_SELECT;
-    return PREPARE_SUCCESS;
-  }
+Our "prepared statement" right now just contains an enum with two possible values. 
+It will contain more data as we allow parameters in statements.  
+Notice we directly pass the corresponding SQL text in the statement types, and make it available with `toString()`. This will make string matching easy.
 
-  return PREPARE_UNRECOGNIZED_STATEMENT;
+```java
+private enum StatementType {
+    STATEMENT_INSERT("insert"),
+    STATEMENT_SELECT("select")
+    ;
+
+    private final String text;
+
+    StatementType(final String text) {
+        this.text = text;
+    }
+
+    @Override
+    public String toString() {
+        return text;
+    }
+}
+
+private class Statement {
+    private final StatementType statementType;
+
+    Statement(StatementType statementType) {
+        this.statementType = statementType;
+    }
+
+    public StatementType getStatementType() {
+        return statementType;
+    }
 }
 ```
 
-Note that we use `strncmp` for "insert" since the "insert" keyword will be followed by data. (e.g. `insert 1 cstack foo@bar.com`)
+`prepare_statement` (our "SQL Compiler") transform the input into a `PreparedStatement` containing the `PrepareResult` status and the "prepared statement".   
+`prepare_statement` does not understand SQL right now. In fact, it only understands two words:
+```java
+    private class PreparedStatement {
+    private PrepareResult prepareResult;
+    private Statement statement;
 
-Lastly, `execute_statement` contains a few stubs:
-```c
-void execute_statement(Statement* statement) {
-  switch (statement->type) {
-    case (STATEMENT_INSERT):
-      printf("This is where we would do an insert.\n");
-      break;
-    case (STATEMENT_SELECT):
-      printf("This is where we would do a select.\n");
-      break;
-  }
+    public PreparedStatement(PrepareResult statementCheckResult, Statement statement) {
+        this.prepareResult = statementCheckResult;
+        this.statement = statement;
+    }
+
+    public PrepareResult getPrepareResult() {
+        return prepareResult;
+    }
+
+    public Statement getStatement() {
+        return statement;
+    }
+}
+
+private PreparedStatement prepareStatement(String input) {
+    String preparedInput = input.toLowerCase();
+    if (preparedInput.startsWith(StatementType.STATEMENT_INSERT.toString())) {
+        Statement statement = new Statement(StatementType.STATEMENT_INSERT);
+        return new PreparedStatement(PrepareResult.PREPARE_SUCCESS, statement);
+    } else if (preparedInput.startsWith(StatementType.STATEMENT_SELECT.toString())) {
+        Statement statement = new Statement(StatementType.STATEMENT_SELECT);
+        return new PreparedStatement(PrepareResult.PREPARE_SUCCESS, statement);
+    }
+
+    return new PreparedStatement(PrepareResult.PREPARE_UNRECOGNIZED_STATEMENT, null);
 }
 ```
 
-Note that it doesn't return any error codes because there's nothing that could go wrong yet.
+Note that we use `startsWith` for the SQL statements (`insert`, `select`) since keywords are followed by some other text. (e.g. `insert 1 cstack foo@bar.com`)
+
+Lastly, `executeStatement` contains a few stubs:
+```java
+private void executeStatement(Statement statement) {
+    switch (statement.getStatementType()) {
+        case STATEMENT_INSERT:
+            System.out.println("This is where we would do an insert.");
+            break;
+        case STATEMENT_SELECT:
+            System.out.println("This is where we would do a select.");
+            break;
+    }
+}
+```
+
+Note that it doesn't return any error because there's nothing that could go wrong yet.
 
 With these refactors, we now recognize two new keywords!
 ```command-line
-~ ./db
-db > insert foo bar
+# launch java Main
+homemadeDB > insert foo bar
 This is where we would do an insert.
 Executed.
-db > delete foo
-Unrecognized keyword at start of 'delete foo'.
-db > select
+homemadeDB > delete foo
+Unrecognized  keyword at start of: 'delete foo'
+homemadeDB > select
 This is where we would do a select.
 Executed.
-db > .tables
-Unrecognized command '.tables'
-db > .exit
+homemadeDB > .tables
+Unrecognized command: '.tables'
+homemadeDB > .exit
+Exiting - Good bye.
 ~
 ```
 
-The skeleton of our database is taking shape... wouldn't it be nice if it stored data? In the next part, we'll implement `insert` and `select`, creating the world's worst data store. In the mean time, here's the entire diff from this part:
+The skeleton of our database is taking shape... wouldn't it be nice if it stored data? In the next part, we'll implement `insert` and `select`, creating the world's worst data store. In the meantime, here's the entire diff from this part:
 
 ```diff
-@@ -10,6 +10,23 @@ struct InputBuffer_t {
- } InputBuffer;
+@@ -7,6 +7,63 @@ import java.util.Objects;
  
-+typedef enum {
-+  META_COMMAND_SUCCESS,
-+  META_COMMAND_UNRECOGNIZED_COMMAND
-+} MetaCommandResult;
-+
-+typedef enum { PREPARE_SUCCESS, PREPARE_UNRECOGNIZED_STATEMENT } PrepareResult;
-+
-+typedef enum { STATEMENT_INSERT, STATEMENT_SELECT } StatementType;
-+
-+typedef struct {
-+  StatementType type;
-+} Statement;
-+
- InputBuffer* new_input_buffer() {
-   InputBuffer* input_buffer = malloc(sizeof(InputBuffer));
-   input_buffer->buffer = NULL;
-@@ -40,17 +57,67 @@ void close_input_buffer(InputBuffer* input_buffer) {
-     free(input_buffer);
- }
+ public class Main {
  
-+MetaCommandResult do_meta_command(InputBuffer* input_buffer) {
-+  if (strcmp(input_buffer->buffer, ".exit") == 0) {
-+    close_input_buffer(input_buffer);
-+    exit(EXIT_SUCCESS);
-+  } else {
-+    return META_COMMAND_UNRECOGNIZED_COMMAND;
-+  }
-+}
-+
-+PrepareResult prepare_statement(InputBuffer* input_buffer,
-+                                Statement* statement) {
-+  if (strncmp(input_buffer->buffer, "insert", 6) == 0) {
-+    statement->type = STATEMENT_INSERT;
-+    return PREPARE_SUCCESS;
-+  }
-+  if (strcmp(input_buffer->buffer, "select") == 0) {
-+    statement->type = STATEMENT_SELECT;
-+    return PREPARE_SUCCESS;
-+  }
-+
-+  return PREPARE_UNRECOGNIZED_STATEMENT;
-+}
-+
-+void execute_statement(Statement* statement) {
-+  switch (statement->type) {
-+    case (STATEMENT_INSERT):
-+      printf("This is where we would do an insert.\n");
-+      break;
-+    case (STATEMENT_SELECT):
-+      printf("This is where we would do a select.\n");
-+      break;
-+  }
-+}
-+
- int main(int argc, char* argv[]) {
-   InputBuffer* input_buffer = new_input_buffer();
-   while (true) {
-     print_prompt();
-     read_input(input_buffer);
- 
--    if (strcmp(input_buffer->buffer, ".exit") == 0) {
--      close_input_buffer(input_buffer);
--      exit(EXIT_SUCCESS);
--    } else {
--      printf("Unrecognized command '%s'.\n", input_buffer->buffer);
-+    if (input_buffer->buffer[0] == '.') {
-+      switch (do_meta_command(input_buffer)) {
-+        case (META_COMMAND_SUCCESS):
-+          continue;
-+        case (META_COMMAND_UNRECOGNIZED_COMMAND):
-+          printf("Unrecognized command '%s'\n", input_buffer->buffer);
-+          continue;
-+      }
-     }
-+
-+    Statement statement;
-+    switch (prepare_statement(input_buffer, &statement)) {
-+      case (PREPARE_SUCCESS):
-+        break;
-+      case (PREPARE_UNRECOGNIZED_STATEMENT):
-+        printf("Unrecognized keyword at start of '%s'.\n",
-+               input_buffer->buffer);
-+        continue;
++    private enum MetaCommandResult {
++        META_COMMAND_SUCCESS,
++        META_COMMAND_UNRECOGNIZED_COMMAND
 +    }
 +
-+    execute_statement(&statement);
-+    printf("Executed.\n");
-   }
- }
++    private enum PrepareResult {
++        PREPARE_SUCCESS,
++        PREPARE_UNRECOGNIZED_STATEMENT
++    }
++
++    private enum StatementType {
++        STATEMENT_INSERT("insert"),
++        STATEMENT_SELECT("select")
++        ;
++
++        private final String text;
++
++        StatementType(final String text) {
++            this.text = text;
++        }
++
++        @Override
++        public String toString() {
++            return text;
++        }
++    }
++
++    private class Statement {
++        private final StatementType statementType;
++
++        Statement(StatementType statementType) {
++            this.statementType = statementType;
++        }
++
++        public StatementType getStatementType() {
++            return statementType;
++        }
++    }
++
++    private class PreparedStatement {
++        private PrepareResult prepareResult;
++        private Statement statement;
++
++        public PreparedStatement(PrepareResult statementCheckResult, Statement statement) {
++            this.prepareResult = statementCheckResult;
++            this.statement = statement;
++        }
++
++        public PrepareResult getPrepareResult() {
++            return prepareResult;
++        }
++
++        public Statement getStatement() {
++            return statement;
++        }
++    }
++
+     public static void main(String[] args) {
+         new Main().run();
+     }
+@@ -20,12 +77,57 @@ public class Main {
+             if (input.isEmpty()) {
+                 continue; // do nothing and loop
+             }
+-            if (input.equals(".exit")) {
+-                System.out.println("Exiting - Good bye.");
+-                System.exit(0);
+-            } else {
+-                System.out.printf("Unrecognized command: '%s'%n", input);
++            if (input.charAt(0) == '.') {
++                MetaCommandResult metaCommandResult = doMetaCommand(input);
++                switch (metaCommandResult) {
++                    case META_COMMAND_SUCCESS:
++                        continue;
++                    case META_COMMAND_UNRECOGNIZED_COMMAND:
++                        System.out.printf("Unrecognized command: '%s'%n", input);
++                        continue;
++                }
+             }
++            PreparedStatement preparedStatement = prepareStatement(input);
++            switch (preparedStatement.prepareResult) {
++                case PREPARE_SUCCESS:
++                    break;
++                case PREPARE_UNRECOGNIZED_STATEMENT:
++                    System.out.printf("Unrecognized  keyword at start of: '%s'%n", input);
++                    continue;
++            }
++            executeStatement(preparedStatement.getStatement());
++            System.out.printf("Executed.%n");
++        }
++    }
++
++    private MetaCommandResult doMetaCommand(String input) {
++        if (input.equals(".exit")) {
++            System.out.println("Exiting - Good bye.");
++            System.exit(0);}
++        return MetaCommandResult.META_COMMAND_UNRECOGNIZED_COMMAND;
++    }
++
++    private PreparedStatement prepareStatement(String input) {
++        String preparedInput = input.toLowerCase();
++        if (preparedInput.startsWith(StatementType.STATEMENT_INSERT.toString())) {
++            Statement statement = new Statement(StatementType.STATEMENT_INSERT);
++            return new PreparedStatement(PrepareResult.PREPARE_SUCCESS, statement);
++        } else if (preparedInput.startsWith(StatementType.STATEMENT_SELECT.toString())) {
++            Statement statement = new Statement(StatementType.STATEMENT_SELECT);
++            return new PreparedStatement(PrepareResult.PREPARE_SUCCESS, statement);
++        }
++
++        return new PreparedStatement(PrepareResult.PREPARE_UNRECOGNIZED_STATEMENT, null);
++    }
++
++    private void executeStatement(Statement statement) {
++        switch (statement.getStatementType()) {
++            case STATEMENT_INSERT:
++                System.out.println("This is where we would do an insert.");
++                break;
++            case STATEMENT_SELECT:
++                System.out.println("This is where we would do a select.");
++                break;
++         }
++    }
+...
 ```
