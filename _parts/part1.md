@@ -129,7 +129,7 @@ if (input.equals(".exit")) {
 
 Let's try it out!
 ```shell
-# launch java Main: DIY
+# launch java Main
 homemadeDB >  .tables
 Unrecognized command: '.tables'
 db > .exit
