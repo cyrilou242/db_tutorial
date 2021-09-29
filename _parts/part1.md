@@ -75,11 +75,12 @@ To do that, our main function will have an infinite loop that prints the prompt,
             String input = readInput();
             Objects.requireNonNull(input);
 
+            if (input.isEmpty()) {
+                continue; // do nothing and loop
+            }
             if (input.equals(".exit")) {
                 System.out.println("Exiting - Good bye.");
                 System.exit(0);
-            } else if (input.isEmpty()) {
-                // do nothing and loop
             } else {
                 System.out.printf("Unrecognized command: '%s'%n", input);
             }
