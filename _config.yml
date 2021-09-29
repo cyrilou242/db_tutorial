@@ -1,7 +1,7 @@
 theme: jekyll-theme-minimal
 title: Let's Build a Simple Database
-description: Writing a sqlite clone from scratch in C
-google_analytics: UA-105767942-1
+description: Writing a sqlite clone from scratch in Java
+google_analytics: UA-143787397-1
 collections:
   parts:
     output: true
