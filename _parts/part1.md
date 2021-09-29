@@ -3,7 +3,7 @@ title: Part 1 - Introduction and Setting up the REPL
 date: 2017-08-30
 ---
 
-As a web developer, I use relational databases every day at my job, but they're a black box to me. Some questions I have:
+As a data engineer, I use relational databases every day at my job, but they're a black box to me. Some questions I have:
 - What format is data saved in? (in memory and on disk)
 - When does it move from memory to disk?
 - Why can there only be one primary key per table?
@@ -64,167 +64,125 @@ sqlite> .exit
 
 To do that, our main function will have an infinite loop that prints the prompt, gets a line of input, then processes that line of input:
 
-```c
-int main(int argc, char* argv[]) {
-  InputBuffer* input_buffer = new_input_buffer();
-  while (true) {
-    print_prompt();
-    read_input(input_buffer);
-
-    if (strcmp(input_buffer->buffer, ".exit") == 0) {
-      close_input_buffer(input_buffer);
-      exit(EXIT_SUCCESS);
-    } else {
-      printf("Unrecognized command '%s'.\n", input_buffer->buffer);
+```java
+    public static void main(String[] args) {
+        new Main().run();
     }
-  }
-}
+
+    public void run() {
+        while (true) {
+            printPrompt();
+            String input = readInput();
+            Objects.requireNonNull(input);
+
+            if (input.equals(".exit")) {
+                System.out.println("Exiting - Good bye.");
+                System.exit(0);
+            } else if (input.isEmpty()) {
+                // do nothing and loop
+            } else {
+                System.out.printf("Unrecognized command: '%s'%n", input);
+            }
+        }
+    }
 ```
 
-We'll define `InputBuffer` as a small wrapper around the state we need to store to interact with [getline()](http://man7.org/linux/man-pages/man3/getline.3.html). (More on that in a minute)
-```c
-typedef struct {
-  char* buffer;
-  size_t buffer_length;
-  ssize_t input_length;
-} InputBuffer;
 
-InputBuffer* new_input_buffer() {
-  InputBuffer* input_buffer = (InputBuffer*)malloc(sizeof(InputBuffer));
-  input_buffer->buffer = NULL;
-  input_buffer->buffer_length = 0;
-  input_buffer->input_length = 0;
+`printPrompt()` prints a prompt to the user. We do this before reading each line of input.
 
-  return input_buffer;
-}
+```java
+    private void printPrompt() {
+        System.out.print("homemadeDB > ");
+    }
 ```
 
-Next, `print_prompt()` prints a prompt to the user. We do this before reading each line of input.
+To read a line of input, we use a ([buffered](https://docs.oracle.com/javase/8/docs/api/java/io/BufferedReader.html)) [InputStreamReader](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/io/InputStreamReader.html):
 
-```c
-void print_prompt() { printf("db > "); }
+
+```java
+    private String readInput() {
+        String inputLine = null;
+        try {
+            BufferedReader is = new BufferedReader(new InputStreamReader(System.in));
+            inputLine = is.readLine();
+        } catch (IOException e) {
+            System.out.println("IOException: " + e);
+        }
+        return inputLine;
+    }
 ```
 
-To read a line of input, use [getline()](http://man7.org/linux/man-pages/man3/getline.3.html):
-```c
-ssize_t getline(char **lineptr, size_t *n, FILE *stream);
-```
-`lineptr` : a pointer to the variable we use to point to the buffer containing the read line. If it set to `NULL` it is mallocatted by `getline` and should thus be freed by the user, even if the command fails.
+Finally, we parse and execute the command.
+There is only one recognized command right now : `.exit`, which terminates the program. Otherwise we print an error message and continue the loop.
+Also, if the input is empty, we loop again.
 
-`n` : a pointer to the variable we use to save the size of allocated buffer.
-
-`stream` : the input stream to read from. We'll be reading from standard input.
-
-`return value` : the number of bytes read, which may be less than the size of the buffer.
-
-We tell `getline` to store the read line in `input_buffer->buffer` and the size of the allocated buffer in `input_buffer->buffer_length`. We store the return value in `input_buffer->input_length`.
-
-`buffer` starts as null, so `getline` allocates enough memory to hold the line of input and makes `buffer` point to it.
-
-```c
-void read_input(InputBuffer* input_buffer) {
-  ssize_t bytes_read =
-      getline(&(input_buffer->buffer), &(input_buffer->buffer_length), stdin);
-
-  if (bytes_read <= 0) {
-    printf("Error reading input\n");
-    exit(EXIT_FAILURE);
-  }
-
-  // Ignore trailing newline
-  input_buffer->input_length = bytes_read - 1;
-  input_buffer->buffer[bytes_read - 1] = 0;
-}
-```
-
-Now it is proper to define a function that frees the memory allocated for an
-instance of `InputBuffer *` and the `buffer` element of the respective
-structure (`getline` allocates memory for `input_buffer->buffer` in
-`read_input`).
-
-```c
-void close_input_buffer(InputBuffer* input_buffer) {
-    free(input_buffer->buffer);
-    free(input_buffer);
-}
-```
-
-Finally, we parse and execute the command. There is only one recognized command right now : `.exit`, which terminates the program. Otherwise we print an error message and continue the loop.
-
-```c
-if (strcmp(input_buffer->buffer, ".exit") == 0) {
-  close_input_buffer(input_buffer);
-  exit(EXIT_SUCCESS);
+```java
+if (input.equals(".exit")) {
+    System.out.println("Exiting - Good bye.");
+    System.exit(0);
+} else if (input.isEmpty()) {
+    // do nothing and loop
 } else {
-  printf("Unrecognized command '%s'.\n", input_buffer->buffer);
+    System.out.println("Unrecognized command.");
 }
 ```
 
 Let's try it out!
 ```shell
-~ ./db
-db > .tables
-Unrecognized command '.tables'.
+# launch java Main: DIY
+homemadeDB >  .tables
+Unrecognized command: '.tables'
 db > .exit
+Exiting - Good bye.
 ~
 ```
 
 Alright, we've got a working REPL. In the next part, we'll start developing our command language. Meanwhile, here's the entire program from this part:
 
-```c
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+```java
+package org.cyrilou242.homemadedb;
 
-typedef struct {
-  char* buffer;
-  size_t buffer_length;
-  ssize_t input_length;
-} InputBuffer;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.Objects;
 
-InputBuffer* new_input_buffer() {
-  InputBuffer* input_buffer = malloc(sizeof(InputBuffer));
-  input_buffer->buffer = NULL;
-  input_buffer->buffer_length = 0;
-  input_buffer->input_length = 0;
+public class Main {
 
-  return input_buffer;
-}
-
-void print_prompt() { printf("db > "); }
-
-void read_input(InputBuffer* input_buffer) {
-  ssize_t bytes_read =
-      getline(&(input_buffer->buffer), &(input_buffer->buffer_length), stdin);
-
-  if (bytes_read <= 0) {
-    printf("Error reading input\n");
-    exit(EXIT_FAILURE);
-  }
-
-  // Ignore trailing newline
-  input_buffer->input_length = bytes_read - 1;
-  input_buffer->buffer[bytes_read - 1] = 0;
-}
-
-void close_input_buffer(InputBuffer* input_buffer) {
-    free(input_buffer->buffer);
-    free(input_buffer);
-}
-
-int main(int argc, char* argv[]) {
-  InputBuffer* input_buffer = new_input_buffer();
-  while (true) {
-    print_prompt();
-    read_input(input_buffer);
-
-    if (strcmp(input_buffer->buffer, ".exit") == 0) {
-      close_input_buffer(input_buffer);
-      exit(EXIT_SUCCESS);
-    } else {
-      printf("Unrecognized command '%s'.\n", input_buffer->buffer);
+    public static void main(String[] args) {
+        new Main().run();
     }
-  }
+
+    public void run() {
+        while (true) {
+            printPrompt();
+            String input = readInput();
+            Objects.requireNonNull(input);
+
+            if (input.equals(".exit")) {
+                System.out.println("Exiting - Good bye.");
+                System.exit(0);
+            } else if (input.isEmpty()) {
+                // do nothing
+            } else {
+                System.out.printf("Unrecognized command: '%s'%n", input);
+            }
+        }
+    }
+
+    private void printPrompt() {
+        System.out.print("homemadeDB > ");
+    }
+
+    private String readInput() {
+        String inputLine = null;
+        try {
+            BufferedReader is = new BufferedReader(new InputStreamReader(System.in));
+            inputLine = is.readLine();
+        } catch (IOException e) {
+            System.out.println("IOException: " + e);
+        }
+        return inputLine;
+    }
 }
 ```

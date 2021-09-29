@@ -2,6 +2,8 @@
 title: How Does a Database Work?
 ---
 
+_This project is a **Java** implementation of [cstack]()'s [original db tutorial project in C](https://cstack.github.io/db_tutorial/). The Java code here is purely educational, but feel free to propose relevant enhancements._
+
 - What format is data saved in? (in memory and on disk)
 - When does it move from memory to disk?
 - Why can there only be one primary key per table?
