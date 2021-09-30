@@ -130,7 +130,7 @@ if (input.equals(".exit")) {
 
 Let's try it out!
 ```shell
-# launch java Main
+~ javac Main.java
 homemadeDB >  .tables
 Unrecognized command: '.tables'
 db > .exit

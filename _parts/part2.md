@@ -176,8 +176,8 @@ private void executeStatement(Statement statement) {
 Note that it doesn't return any error because there's nothing that could go wrong yet.
 
 With these refactors, we now recognize two new keywords!
-```command-line
-# launch java Main
+```shell
+~ javac Main.java
 homemadeDB > insert foo bar
 This is where we would do an insert.
 Executed.

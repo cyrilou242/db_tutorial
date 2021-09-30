@@ -1,4 +1,4 @@
-db
+Main*.class
 *.db
 _site/
 TODO

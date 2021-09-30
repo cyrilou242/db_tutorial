@@ -1,14 +1,12 @@
-db: db.c
-	gcc db.c -o db
+build:
+	javac Main.java
 
-run: db
-	./db mydb.db
+run:
+	java Main
 
 clean:
-	rm -f db *.db
+	rm -f Main.class
 
-test: db
-	bundle exec rspec
 
-format: *.c
-	clang-format -style=Google -i *.c
+#test: db
+#	bundle exec rspec
